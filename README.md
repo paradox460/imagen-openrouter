@@ -10,6 +10,7 @@ A powerful client-side AI image generation tool using OpenRouter API. Generate t
 ### 🎨 Multi-Model Support
 - **Gemini 2.5 Flash Image** - Google's fast image generation
 - **Gemini 2.5 Flash (Preview)** - Preview version with latest features
+- **Gemini 3.1 Flash (Preview)** - Newer Gemini preview image model
 - **Gemini 3 Pro (Preview)** - Advanced model, up to 14 reference images
 - **GPT-5 Image** - OpenAI's latest image model
 - **GPT-5 Image Mini** - Faster, smaller GPT-5 variant

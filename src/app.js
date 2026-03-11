@@ -116,6 +116,13 @@ const MODEL_CONFIGS = {
         supportsImageInput: true,
         maxReferences: 3
     },
+    'google/gemini-3.1-flash-image-preview': {
+        name: 'Gemini 3.1 Flash Image (Preview)',
+        supportsImageSize: true,
+        supportsAspectRatio: true,
+        supportsImageInput: true,
+        maxReferences: 3
+    },
     'google/gemini-3-pro-image-preview': {
         name: 'Gemini 3 Pro Image (Preview)',
         supportsImageSize: true,
