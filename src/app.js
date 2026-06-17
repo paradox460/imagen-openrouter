@@ -97,9 +97,19 @@ const state = {
     references: [], // Dynamic array - unlimited references
     images: [], // Will be loaded from IndexedDB
     currentImage: null,
-    pendingBatches: [] // Track pending generation batches { id, prompt, count, completed, failed }
+    pendingBatches: [], // Track pending generation batches { id, prompt, count, completed, failed }
+    selectedExpressions: new Set() // populated after EXPRESSIONS is defined
 };
 
+const EXPRESSIONS = [
+    'admiration', 'amusement', 'anger', 'annoyance', 'approval',
+    'caring', 'confusion', 'curiosity', 'desire', 'disappointment',
+    'disapproval', 'disgust', 'embarrassment', 'excitement', 'fear',
+    'gratitude', 'grief', 'joy', 'love', 'nervousness',
+    'neutral', 'optimism', 'pride', 'relief', 'remorse', 'realization',
+    'retaliation', 'sadness', 'surprise'
+];
+state.selectedExpressions = new Set(EXPRESSIONS);
 // ===== Model Configurations =====
 const MODEL_CONFIGS = {
     'x-ai/grok-imagine-image-quality': {
@@ -229,6 +239,15 @@ const elements = {
     promptInput: document.getElementById('promptInput'),
     charCount: document.getElementById('charCount'),
     generateBtn: document.getElementById('generateBtn'),
+    expressionsToggle: document.getElementById('expressionsToggle'),
+    expressionsArrow: document.getElementById('expressionsArrow'),
+    expressionModal: document.getElementById('expressionModal'),
+    expressionModalOverlay: document.getElementById('expressionModalOverlay'),
+    expressionModalClose: document.getElementById('expressionModalClose'),
+    expressionGrid: document.getElementById('expressionGrid'),
+    expressionsSelectAll: document.getElementById('expressionsSelectAll'),
+    expressionsDeselectAll: document.getElementById('expressionsDeselectAll'),
+    expressionModalDone: document.getElementById('expressionModalDone'),
     gallery: document.getElementById('gallery'),
     galleryEmpty: document.getElementById('galleryEmpty'),
     clearGallery: document.getElementById('clearGallery'),
@@ -627,7 +646,79 @@ async function generateImages() {
     const currentQuality = state.imageQuality;
     const currentAspectRatio = state.aspectRatio;
     const imageCount = state.imageCount;
-    
+
+    // Expression mode: expand {{expression}} into batch generations
+    if (elements.expressionsToggle && elements.expressionsToggle.checked) {
+        const selected = EXPRESSIONS.filter(e => state.selectedExpressions.has(e));
+        const totalCount = selected.length * imageCount;
+        const exprBatchId = Date.now() + Math.random();
+        const exprBatch = {
+            id: exprBatchId,
+            prompt: prompt,
+            model: currentModel,
+            modelName: modelConfig.name,
+            count: totalCount,
+            completed: 0,
+            failed: 0
+        };
+        state.pendingBatches.push(exprBatch);
+        addLoadingPlaceholders(exprBatch, totalCount);
+        showToast(`Queued ${totalCount} expression images`, 'success');
+
+        const effectivePrompt = prompt.includes('{{expression}}')
+            ? prompt
+            : prompt + '\n\nGenerate an image for the expression {{expression}}';
+        const promises = [];
+        for (const expr of selected) {
+            for (let j = 0; j < imageCount; j++) {
+                const expressionPrompt = effectivePrompt.replaceAll('{{expression}}', expr);
+                promises.push((async () => {
+                    try {
+                        const result = await generateSingleImage(expressionPrompt, modelConfig);
+                        if (result) {
+                            const imageData = {
+                                id: Date.now() + Math.random(),
+                                url: result,
+                                prompt: expressionPrompt,
+                                expression: expr,
+                                expressionIndex: j + 1,
+                                model: currentModel,
+                                modelName: modelConfig.name,
+                                size: currentSize,
+                                quality: currentQuality,
+                                aspectRatio: currentAspectRatio,
+                                references: currentReferences,
+                                createdAt: new Date().toISOString()
+                            };
+                            state.images.unshift(imageData);
+                            exprBatch.completed++;
+                            removeOnePlaceholder(exprBatchId);
+                            prependImageCard(imageData, 0);
+                            ImagenDB.saveImage(imageData).catch(e => console.error('Failed to save:', e));
+                        } else {
+                            exprBatch.failed++;
+                            removeOnePlaceholder(exprBatchId);
+                        }
+                    } catch (error) {
+                        console.error('Expression generation failed:', error);
+                        exprBatch.failed++;
+                        removeOnePlaceholder(exprBatchId);
+                    }
+                })());
+            }
+        }
+
+        await Promise.allSettled(promises);
+        const batchIdx = state.pendingBatches.findIndex(b => b.id === exprBatchId);
+        if (batchIdx !== -1) state.pendingBatches.splice(batchIdx, 1);
+        if (exprBatch.completed > 0) {
+            showToast(`${exprBatch.completed} expression images generated!`, 'success');
+        } else {
+            showToast('Failed to generate expression images. Check console for details.', 'error');
+        }
+        return;
+    }
+
     // Create a batch to track this generation request
     const batchId = Date.now() + Math.random();
     const batch = {
@@ -640,10 +731,10 @@ async function generateImages() {
         failed: 0
     };
     state.pendingBatches.push(batch);
-    
+
     // Add loading placeholders without full re-render
     addLoadingPlaceholders(batch, imageCount);
-    
+
     showToast(`Queued ${imageCount} image(s) for generation`, 'success');
 
     // Generate images and display each one as it completes
@@ -665,11 +756,11 @@ async function generateImages() {
                 };
                 state.images.unshift(imageData);
                 batch.completed++;
-                
+
                 // Remove one placeholder and add the new image
                 removeOnePlaceholder(batchId);
                 prependImageCard(imageData, 0);
-                
+
                 // Save to IndexedDB in background
                 ImagenDB.saveImage(imageData).catch(e => console.error('Failed to save to IndexedDB:', e));
             } else {
@@ -833,6 +924,16 @@ async function generateSingleImage(prompt, modelConfig) {
     throw new Error('No image in response. Check console for full API response.');
 }
 
+function renderExpressionGrid() {
+    elements.expressionGrid.innerHTML = EXPRESSIONS.map(expr => `
+        <label class="expression-grid-item">
+            <input type="checkbox" value="${expr}" ${state.selectedExpressions.has(expr) ? 'checked' : ''}>
+            ${expr}
+        </label>
+    `).join('');
+}
+
+
 // ===== Gallery =====
 function renderGallery() {
     const hasPending = state.pendingBatches.length > 0;
@@ -930,6 +1031,7 @@ function renderGallery() {
             <div class="image-card-overlay">
                 <p class="image-card-prompt">${safePrompt}</p>
                 <div class="image-card-meta">
+                    ${image.expression ? `<span class="meta-tag expression-tag">${escapeHtml(image.expression)}</span>` : ''}
                     <span class="meta-tag">${escapeHtml(image.modelName || image.model)}</span>
                     <span class="meta-tag">${escapeHtml(image.quality || image.size)}</span>
                     <span class="meta-tag">${escapeHtml(image.aspectRatio)}</span>
@@ -975,7 +1077,7 @@ function renderGallery() {
 function addLoadingPlaceholders(batch, count) {
     // Hide empty state if showing
     elements.galleryEmpty.style.display = 'none';
-    
+
     for (let i = 0; i < count; i++) {
         const placeholder = createPlaceholderElement(batch);
         elements.gallery.insertBefore(placeholder, elements.gallery.firstChild);
@@ -1020,9 +1122,9 @@ function removeOnePlaceholder(batchId) {
     if (placeholder) {
         placeholder.remove();
     }
-    
+
     // Show empty state if gallery is now empty
-    if (elements.gallery.children.length === 0 || 
+    if (elements.gallery.children.length === 0 ||
         (elements.gallery.children.length === 1 && elements.gallery.contains(elements.galleryEmpty))) {
         elements.galleryEmpty.style.display = 'flex';
         if (!elements.gallery.contains(elements.galleryEmpty)) {
@@ -1033,7 +1135,7 @@ function removeOnePlaceholder(batchId) {
 
 function prependImageCard(image, index) {
     const card = createImageCardElement(image, index);
-    
+
     // Insert after any remaining placeholders
     const firstNonPlaceholder = elements.gallery.querySelector('.image-card:not(.loading-placeholder)');
     if (firstNonPlaceholder) {
@@ -1041,7 +1143,7 @@ function prependImageCard(image, index) {
     } else {
         elements.gallery.appendChild(card);
     }
-    
+
     // Update indices on existing cards since we prepended
     updateCardIndices();
 }
@@ -1090,23 +1192,25 @@ function createImageCardElement(image, index) {
         <img src="${safeUrl}" alt="${safePrompt}" loading="lazy">
         <div class="image-card-overlay">
             <p class="image-card-prompt">${safePrompt}</p>
-            <div class="image-card-meta">
-                <span class="meta-tag">${escapeHtml(image.modelName || image.model)}</span>
-                <span class="meta-tag">${escapeHtml(image.quality || image.size)}</span>
-                <span class="meta-tag">${escapeHtml(image.aspectRatio)}</span>
+                <div class="image-card-meta">
+                    ${image.expression ? `<span class="meta-tag expression-tag">${escapeHtml(image.expression)}</span>` : ''}
+                    <span class="meta-tag">${escapeHtml(image.modelName || image.model)}</span>
+                    <span class="meta-tag">${escapeHtml(image.quality || image.size)}</span>
+                    <span class="meta-tag">${escapeHtml(image.aspectRatio)}</span>
+                </div>
             </div>
         </div>
     `;
 
     // Attach event handlers
     attachImageCardHandlers(card, image);
-    
+
     return card;
 }
 
 function attachImageCardHandlers(card, image) {
     const imageId = image.id;
-    
+
     card.querySelector('.image-card-download').addEventListener('click', (e) => {
         e.stopPropagation();
         const idx = state.images.findIndex(img => img.id === imageId);
@@ -1156,7 +1260,7 @@ async function deleteImage(index) {
     if (card) {
         card.remove();
     }
-    
+
     // Show empty state if gallery is now empty
     if (state.images.length === 0 && state.pendingBatches.length === 0) {
         elements.galleryEmpty.style.display = 'flex';
@@ -1164,7 +1268,7 @@ async function deleteImage(index) {
             elements.gallery.appendChild(elements.galleryEmpty);
         }
     }
-    
+
     showToast('Image deleted', 'success');
 }
 
@@ -1172,11 +1276,14 @@ function downloadImageByIndex(index) {
     const image = state.images[index];
     if (!image) return;
 
+    const ext = getImageExtension(image.url);
+    const filename = image.expression
+        ? `${image.expression}-${image.expressionIndex || 1}.${ext}`
+        : `imagen-${new Date(image.createdAt).toISOString().replace(/[:.]/g, '-')}.${ext}`;
+
     const link = document.createElement('a');
     link.href = image.url;
-    const timestamp = new Date(image.createdAt).toISOString().replace(/[:.]/g, '-');
-    const ext = getImageExtension(image.url);
-    link.download = `imagen-${timestamp}.${ext}`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1325,10 +1432,15 @@ function recreateImage() {
 function downloadCurrentImage() {
     if (!state.currentImage) return;
 
-    const link = document.createElement('a');
-    link.href = state.currentImage.url;
     const ext = getImageExtension(state.currentImage.url);
-    link.download = `imagen_${state.currentImage.id}.${ext}`;
+    const image = state.currentImage;
+    const filename = image.expression
+        ? `${image.expression}-${image.expressionIndex || 1}.${ext}`
+        : `imagen_${image.id}.${ext}`;
+
+    const link = document.createElement('a');
+    link.href = image.url;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1369,7 +1481,7 @@ function escapeHtml(text) {
 
 function getImageExtension(url) {
     if (!url) return 'png';
-    
+
     // Check for data URL with mime type
     if (url.startsWith('data:image/')) {
         const mimeMatch = url.match(/^data:image\/(\w+)/);
@@ -1384,7 +1496,7 @@ function getImageExtension(url) {
             return mime;
         }
     }
-    
+
     // Check URL extension
     if (url.startsWith('http')) {
         const urlPath = url.split('?')[0];
@@ -1393,7 +1505,7 @@ function getImageExtension(url) {
             return ext === 'jpeg' ? 'jpg' : ext;
         }
     }
-    
+
     // Default to png
     return 'png';
 }

@@ -121,9 +121,18 @@
                         rows="3"></textarea>
                     <div class="prompt-actions">
                         <span class="char-count" id="charCount">0 chars</span>
-                        <button type="button" class="btn btn-primary" id="generateBtn">
-                            Generate
-                        </button>
+                        <div class="gen-and-expression-controls">
+                          <div class="expressions-control">
+                              <label class="expressions-toggle">
+                                  <input type="checkbox" id="expressionsToggle">
+                                  Expressions
+                              </label>
+                              <button type="button" class="expressions-arrow" id="expressionsArrow" title="Select expressions">&#9660;</button>
+                          </div>
+                          <button type="button" class="btn btn-primary" id="generateBtn">
+                              Generate
+                          </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -188,6 +197,29 @@
             <div class="modal-metadata" id="modalMetadata">
                 <!-- Metadata will be injected here -->
             </div>
+        </div>
+    </div>
+
+
+    <!-- Expression Selector Modal -->
+    <div class="modal" id="expressionModal">
+        <div class="modal-overlay" id="expressionModalOverlay"></div>
+        <div class="modal-content expression-modal-content">
+            <button class="modal-close" id="expressionModalClose">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <h3>Select Expressions</h3>
+            <div class="expression-modal-actions">
+                <button type="button" class="btn btn-ghost" id="expressionsSelectAll">Select All</button>
+                <button type="button" class="btn btn-ghost" id="expressionsDeselectAll">Deselect All</button>
+            </div>
+            <div class="expression-grid" id="expressionGrid">
+                <!-- Checkboxes injected by JS -->
+            </div>
+            <button type="button" class="btn btn-primary" id="expressionModalDone">Done</button>
         </div>
     </div>
 
